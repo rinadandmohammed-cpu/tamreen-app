@@ -1,0 +1,230 @@
+import streamlit as st
+
+# 1. إعدادات الصفحة الاحترافية
+st.set_page_config(
+    page_title="تمرين ملاعب ون | نظام المشرف",
+    page_icon="⚽",
+    layout="centered"
+)
+
+# 💾 الرمز السري للأدمن (يمكنك تغييره من هنا إلى أي رقم تريده)
+ADMIN_PIN = "1234"
+
+# 2. تصميم واجهة المستخدم المتقدمة
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+    
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Cairo', sans-serif;
+        background-color: #f3f4f6;
+        direction: rtl;
+        text-align: right;
+    }
+    
+    .app-header {
+        background: linear-gradient(135deg, #1e522e 0%, #2e7d32 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 20px;
+        text-align: center;
+        box-shadow: 0 10px 20px rgba(46, 125, 50, 0.15);
+        margin-bottom: 25px;
+    }
+    
+    [data-testid="stForm"] {
+        background-color: white !important;
+        border-radius: 15px !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
+    }
+    
+    /* أزرار الإضافة الرئيسية */
+    div.stButton > button:first-child {
+        border-radius: 12px;
+        background: linear-gradient(90deg, #2e7d32 0%, #43a047 100%);
+        color: white;
+        font-weight: 700;
+        width: 100%;
+        padding: 10px;
+        border: none;
+    }
+    
+    .list-title {
+        color: white;
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-weight: 700;
+        margin-top: 25px;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .player-card {
+        background-color: white;
+        padding: 12px 15px;
+        border-radius: 12px;
+        margin: 8px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    
+    .phone-text {
+        color: #6b7280;
+        font-size: 13px;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_config=True)
+
+# 3. الهيدر
+st.markdown("""
+    <div class="app-header">
+        <h1 style="margin:0; font-size: 26px; font-weight:700;">🟢 تمرين ملاعب ون</h1>
+        <p style="margin:5px 0 0 0; opacity: 0.9; font-size: 14px;">نظام حجز المقاعد مع لوحة تحكم الإدارة</p>
+    </div>
+""", unsafe_allow_config=True)
+
+# 🛠️ مخزن البيانات المشترك لجميع اللاعبين
+@st.cache_resource
+def get_global_player_list():
+    return []
+
+all_players = get_global_player_list()
+
+# متغيرات لحفظ حالة الحذف والتعديل المؤقتة
+if 'action_type' not in st.session_state:
+    st.session_state.action_type = None
+if 'selected_index' not in st.session_state:
+    st.session_state.selected_index = None
+
+registered_phones = [p['phone'] for p in all_players]
+registered_names = [p['name'] for p in all_players]
+
+# 4. فورم تسجيل اللاعبين (متاح للجميع)
+with st.form(key='add_player_form', clear_on_submit=True):
+    st.markdown("<h3 style='margin-top:0; color:#374151; font-size:16px;'>📝 نموذج حجز مقعد لاعب</h3>", unsafe_allow_config=True)
+    player_name = st.text_input("الاسم الثلاثي:")
+    player_phone = st.text_input("رقم الجوال:")
+    submit_button = st.form_submit_button(label='تأكيد التسجيل')
+
+if submit_button:
+    cleaned_phone = player_phone.strip()
+    cleaned_name = " ".join(player_name.split())
+    
+    if cleaned_phone == "" or cleaned_name == "":
+        st.warning("⚠️ يرجى ملء الحقول المطلوبة.")
+    elif not cleaned_phone.isdigit() or len(cleaned_phone) < 9 or len(cleaned_phone) > 10:
+        st.error("❌ رقم الجوال غير صحيح.")
+    elif cleaned_phone in registered_phones:
+        st.error("❌ رقم الجوال مسجل مسبقاً!")
+    elif cleaned_name in registered_names:
+        st.error("❌ هذا الاسم موجود بالفعل.")
+    elif len(all_players) >= 28:
+        st.error("🚨 المقاعد ممتلئة بالكامل.")
+    else:
+        all_players.append({"phone": cleaned_phone, "name": cleaned_name})
+        st.success(f"🎉 تم حجز مقعدك بنجاح يا {cleaned_name}.")
+        st.rerun()
+
+st.divider()
+
+# 5. نافذة الأدمن المنبثقة للتحقق (تظهر فقط عند طلب تعديل أو حذف)
+if st.session_state.action_type in ['delete', 'edit', 'clear_all']:
+    st.warning("🔒 منطقة خاصة بالمسؤول (الأدمن)")
+    entered_pin = st.text_input("أدخل الرمز السري للأدمن للمتابعة:", type="password", key="admin_pin_input")
+    
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        if st.button("✅ تأكيد العملية", key="confirm_admin_btn"):
+            if entered_pin == ADMIN_PIN:
+                idx = st.session_state.selected_index
+                
+                if st.session_state.action_type == 'delete':
+                    removed_player = all_players.pop(idx)
+                    st.success(f"🗑️ تم حذف اللاعب {removed_player['name']} بنجاح.")
+                
+                elif st.session_state.action_type == 'edit':
+                    new_name = st.session_state.get('edit_name_val', '').strip()
+                    new_phone = st.session_state.get('edit_phone_val', '').strip()
+                    if new_name and new_phone:
+                        all_players[idx] = {"name": new_name, "phone": new_phone}
+                        st.success("📝 تم تعديل بيانات اللاعب بنجاح.")
+                
+                elif st.session_state.action_type == 'clear_all':
+                    all_players.clear()
+                    st.success("🧹 تم تصفير جميع القوائم للتمرين الجديد.")
+                
+                # إعادة تعيين الحالة بعد النجاح
+                st.session_state.action_type = None
+                st.session_state.selected_index = None
+                st.rerun()
+            else:
+                st.error("❌ الرمز السري غير صحيح! لا تملك صلاحية التعديل.")
+                
+    with col_act2:
+        if st.button("❌ إلغاء", key="cancel_admin_btn"):
+            st.session_state.action_type = None
+            st.session_state.selected_index = None
+            st.rerun()
+    st.divider()
+
+# 6. دالة عرض اللاعبين مع أزرار التحكم للأدمن
+def display_admin_list(players_slice, start_idx, border_color):
+    if not players_slice:
+        st.markdown("<p style='text-align:center; color:#9ca3af;'>لا يوجد لاعبين حالياً</p>", unsafe_allow_config=True)
+    else:
+        for local_idx, p in enumerate(players_slice):
+            global_idx = start_idx + local_idx
+            
+            # كرت اللاعب الأساسي
+            st.markdown(f"""
+                <div class="player-card" style="border-right: 6px solid {border_color};">
+                    <span style="font-weight:600; color:#1f2937;">{global_idx+1}️⃣ &nbsp; {p['name']}</span><br>
+                    <span class="phone-text">📱 {p['phone']}</span>
+                </div>
+            """, unsafe_allow_config=True)
+            
+            # صف أزرار التحكم (تعديل / حذف) للأدمن تحت كل كرت بشكل أنيق
+            c1, c2, _ = st.columns([0.25, 0.25, 0.5])
+            with c1:
+                if st.button(f"🗑️ حذف", key=f"del_{global_idx}"):
+                    st.session_state.action_type = 'delete'
+                    st.session_state.selected_index = global_idx
+                    st.rerun()
+            with c2:
+                if st.button(f"📝 تعديل", key=f"edit_{global_idx}"):
+                    st.session_state.action_type = 'edit'
+                    st.session_state.selected_index = global_idx
+                    # حفظ البيانات الحالية في جلسة العمل للتعديل عليها
+                    st.session_state.edit_name_val = p['name']
+                    st.session_state.edit_phone_val = p['phone']
+                    st.rerun()
+
+            # حقل إدخال إضافي يظهر فقط عند الضغط على تعديل لتحديث البيانات
+            if st.session_state.action_type == 'edit' and st.session_state.selected_index == global_idx:
+                st.session_state.edit_name_val = st.text_input("الاسم الجديد:", value=st.session_state.edit_name_val, key="input_edit_name")
+                st.session_state.edit_phone_val = st.text_input("الجوال الجديد:", value=st.session_state.edit_phone_val, key="input_edit_phone")
+
+# 7. عرض القوائم الثلاثة
+# القائمة الأساسية
+basic_players = all_players[:18]
+st.markdown(f'<div class="list-title" style="background-color: #2e7d32;"><span>📋 اللاعبون الأساسيون</span> <span>{len(basic_players)} / 18</span></div>', unsafe_allow_config=True)
+display_admin_list(basic_players, 0, "#2e7d32")
+
+# الاحتياط الأول
+sub_players = all_players[18:24]
+st.markdown(f'<div class="list-title" style="background-color: #f9a825; color: black;"><span>⏳ قائمة الاحتياط الأول</span> <span>{len(sub_players)} / 6</span></div>', unsafe_allow_config=True)
+display_admin_list(sub_players, 18, "#f9a825")
+
+# احتياط الاحتياط
+deep_sub_players = all_players[24:28]
+st.markdown(f'<div class="list-title" style="background-color: #d32f2f;"><span>🚨 قائمة احتياط الاحتياط</span> <span>{len(deep_sub_players)} / 4</span></div>', unsafe_allow_config=True)
+display_admin_list(deep_sub_players, 24, "#d32f2f")
+
+# 8. قسم إدارة التمرين بالكامل للمشرف
+st.write("")
+with st.expander("⚙️ لوحة الإدارة العامة للتمرين (خاصة بالأدمن)"):
+    if st.button("🗑️ إعادة تصفير وتهيئة التطبيق بالكامل"):
+        st.session_state.action_type = 'clear_all'
+        st.session_state.selected_index = None
+        st.rerun()
